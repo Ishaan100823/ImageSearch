@@ -1,0 +1,312 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# ML Patterns & Model Configurations
+
+## CLIP Image Embeddings
+- **Model**: `openai/clip-vit-base-patch32` (balance of speed/quality)
+- **Preprocessing**: Convert to RGB, normalize via CLIPProcessor
+- **Embedding Dimension**: 512 (varies by model variant)
+- **Normalization**: L2 normalize for cosine similarity
+- **Device**: Auto-detect CUDA/CPU, prefer GPU if available
+
+## FAISS Similarity Search
+- **Index Type**: `IndexFlatIP` (Inner Product for normalized vectors = cosine similarity)
+- **Distance Metric**: Cosine similarity via inner product on normalized embeddings
+- **Performance**: Sub-second search on 16k vectors
+- **Memory**: ~32MB for 16k x 512 float32 embeddings
+
+## Category Classification
+- **Algorithm**: RandomForestClassifier (handles multi-class, robust to imbalanced data)
+- **Features**: CLIP embeddings (512-dimensional)
+- **Target**: Product categories from Shopify `product_type` field
+- **Class Balancing**: `class_weight='balanced'` to handle imbalanced categories
+- **Confidence**: Use `predict_proba()` for classification confidence scores
+
+## Data Processing Patterns
+
+### Image Handling
+```python
+# Standard image preprocessing
+image = Image.open(path).convert("RGB")
+inputs = processor(images=image, return_tensors="pt").to(device)
+with torch.no_grad():
+    features = model.get_image_features(**inputs)
+features = features / features.norm(p=2, dim=-1, keepdim=True)  # L2 normalize
+```
+
+### Error Handling for Images
+- Validate image format with `Image.open().verify()`
+- Skip corrupted/unsupported images gracefully
+- Log failures but continue processing
+- Cache valid images locally to avoid re-downloading
+
+### Model Loading Patterns
+- Load models once at startup (not per request)
+- Use global variables for model instances
+- Implement proper error handling for missing model files
+- Graceful degradation if optional models (classifier) fail to load
+
+## Performance Optimizations
+- **Batch Processing**: Process images in batches during index building
+- **Memory Management**: Use float32 for embeddings (sufficient precision)
+- **Caching**: Cache downloaded images locally
+- **Lazy Loading**: Load models only when needed
+- **Rate Limiting**: Respect Shopify API limits (2 req/sec)
+
+# Advanced ML Patterns & Neural Architecture
+
+## Multi-Image Visual Aggregation Architecture
+
+### Hierarchical Attention Pooling
+**VisualAttentionAggregator** replaces simple averaging with learned attention:
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class VisualAttentionAggregator(nn.Module):
+    def __init__(self, embed_dim=512, num_heads=8):
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(embed_dim))
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads=num_heads)
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        
+    def forward(self, image_embs):
+        # image_embs: [N_images, 512] - multiple views of same product
+        query = self.query.unsqueeze(0).unsqueeze(0)  # [1,1,512]
+        attn_weights = F.softmax(torch.matmul(image_embs, self.query)/np.sqrt(512), 0)
+        aggregated = torch.sum(image_embs * attn_weights, dim=0)
+        return self.layer_norm(aggregated)
+```
+
+### Texture-Aware Feature Enhancement
+**Multi-Scale CLIP Adaptation** for fabric/pattern recognition:
+```python
+def extract_texture_features(image, model):
+    """Enhanced CLIP feature extraction with texture focus"""
+    with torch.no_grad():
+        features = model.visual(image.unsqueeze(0), output_hidden_states=True)
+        # Combine layers 4-8 for texture details
+        texture_layers = [features.hidden_states[i] for i in [4,5,6,7,8]]
+        fused_features = torch.cat(texture_layers, dim=-1).mean(dim=1)
+        return fused_features / fused_features.norm(p=2, dim=-1, keepdim=True)
+```
+
+### Texture Enhancement Network
+**TextureEnhancer** for fabric pattern discrimination:
+```python
+class TextureEnhancer(nn.Module):
+    def __init__(self, input_channels=3, output_dim=512):
+        super().__init__()
+        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(128, output_dim)
+        self.dropout = nn.Dropout(0.2)
+        
+    def forward(self, image):
+        # Local texture pattern extraction
+        x = F.relu(self.conv1(image))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = self.adaptive_pool(x).flatten(1)
+        return self.fc(self.dropout(x))
+```
+
+## Advanced FAISS Indexing Configuration
+
+### IVF-PQ Setup for Texture Discrimination
+```python
+import faiss
+import numpy as np
+
+def create_texture_aware_index(dim=512, n_centroids=100):
+    """Create optimized FAISS index for texture similarity"""
+    quantizer = faiss.IndexFlatL2(dim)
+    index = faiss.IndexIVFPQ(quantizer, dim, n_centroids, 8, 8)
+    
+    # Optimize for texture preservation
+    index.train_codebook_threshold = 0.25  # Preserve texture details
+    index.nprobe = 16  # Balance accuracy/speed
+    
+    return index
+
+def build_product_index(product_embeddings):
+    """Build and train the texture-aware index"""
+    embeddings_array = np.array(product_embeddings).astype('float32')
+    
+    index = create_texture_aware_index(embeddings_array.shape[1])
+    index.train(embeddings_array)
+    index.add(embeddings_array)
+    
+    return index
+```
+
+## Multi-Image Processing Pipeline
+
+### Product Data Processing
+```python
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+def process_multi_image_product(row):
+    """Process product with multiple images"""
+    product_id = row['shopify_product_id']
+    title = row['title']
+    
+    # Parse images JSON array
+    images_urls = json.loads(row['images'])
+    preview_url = row['preview_image']
+    
+    # Download all product views
+    images = []
+    for i, url in enumerate(images_urls[:10]):  # Limit to 10 images
+        try:
+            img = download_and_preprocess_image(url)
+            if img is not None:
+                images.append(img)
+        except Exception as e:
+            print(f"Failed to process image {i} for product {product_id}: {e}")
+    
+    return {
+        'id': product_id,
+        'title': title,
+        'images': images,
+        'preview_url': preview_url,
+        'num_views': len(images)
+    }
+
+def parallel_product_processing(csv_data, max_workers=8):
+    """Process products in parallel for efficiency"""
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        processed_products = list(executor.map(process_multi_image_product, 
+                                             csv_data.itertuples(index=False)))
+    return [p for p in processed_products if p['images']]  # Filter successful ones
+```
+
+## Advanced Query Processing
+
+### Visual Search with Texture Re-ranking
+```python
+def visual_search_with_reranking(query_image, index, product_metadata, k=5):
+    """Enhanced search with texture-aware re-ranking"""
+    
+    # Extract multi-scale features
+    query_features = extract_texture_features(query_image, clip_model)
+    query_texture = texture_enhancer(query_image.unsqueeze(0))
+    
+    # Combined feature representation
+    combined_query = torch.cat([query_features, query_texture], dim=-1)
+    
+    # Initial FAISS search (get more candidates for re-ranking)
+    distances, indices = index.search(combined_query.numpy(), k*3)
+    
+    # Texture-focused re-ranking
+    candidates = []
+    for dist, idx in zip(distances[0], indices[0]):
+        if idx < len(product_metadata):
+            similarity_score = 1.0 - (dist / 2.0)  # Normalize distance to similarity
+            candidates.append((idx, similarity_score))
+    
+    # Sort by similarity and return top-k
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    return candidates[:k]
+```
+
+## Performance Optimization Patterns
+
+### Memory-Efficient Processing
+```python
+def batch_embed_products(products, batch_size=32):
+    """Process products in batches to manage memory"""
+    aggregator = VisualAttentionAggregator().eval()
+    all_embeddings = []
+    
+    for i in range(0, len(products), batch_size):
+        batch = products[i:i+batch_size]
+        batch_embeddings = []
+        
+        for product in batch:
+            if product['images']:
+                # Extract features for each image
+                image_features = []
+                for img in product['images']:
+                    features = extract_texture_features(img, clip_model)
+                    image_features.append(features)
+                
+                # Aggregate using attention
+                if image_features:
+                    stacked_features = torch.stack(image_features)
+                    aggregated = aggregator(stacked_features)
+                    batch_embeddings.append(aggregated.detach().numpy())
+        
+        all_embeddings.extend(batch_embeddings)
+        
+        # Clear GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    
+    return all_embeddings
+```
+
+### Model Loading and Caching
+```python
+def load_trained_models():
+    """Load all trained neural components"""
+    
+    # Load CLIP model
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    
+    # Load custom neural components
+    aggregator = VisualAttentionAggregator()
+    if os.path.exists('visual_attention_aggregator.pth'):
+        aggregator.load_state_dict(torch.load('visual_attention_aggregator.pth'))
+    
+    texture_enhancer = TextureEnhancer()
+    if os.path.exists('texture_enhancer.pth'):
+        texture_enhancer.load_state_dict(torch.load('texture_enhancer.pth'))
+    
+    return {
+        'clip_model': clip_model,
+        'clip_processor': clip_processor,
+        'aggregator': aggregator,
+        'texture_enhancer': texture_enhancer
+    }
+```
+
+## Validation and Metrics
+
+### Performance Tracking
+```python
+def evaluate_texture_accuracy(test_data, index, k=5):
+    """Evaluate texture discrimination accuracy"""
+    correct_matches = 0
+    total_queries = 0
+    
+    for query_product in test_data:
+        if query_product['images']:
+            # Use first image as query
+            query_img = query_product['images'][0]
+            results = visual_search_with_reranking(query_img, index, k=k)
+            
+            # Check if same product is in top-k results
+            for result_idx, _ in results:
+                if result_idx == query_product['index']:
+                    correct_matches += 1
+                    break
+            
+            total_queries += 1
+    
+    accuracy = correct_matches / total_queries if total_queries > 0 else 0
+    return accuracy
+
+# Target metrics for checked shirts POC:
+# - Top-1 Accuracy: >92%
+# - Texture Recall: >89%
+# - Query Latency: <180ms
+# - Index Compression: 18MB for 16k products

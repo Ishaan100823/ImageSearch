@@ -1,0 +1,114 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# API Patterns & Data Structures
+
+## FastAPI Backend Patterns
+
+### Startup Loading Pattern
+```python
+# Load all models and data at application startup
+@app.on_event("startup")  # Or use global variables loaded at module level
+async def startup_event():
+    global clip_model, faiss_index, product_metadata
+    # Load heavy models once, not per request
+```
+
+### File Upload Handling
+```python
+@app.post("/search_products/")
+async def search_products_endpoint(file: UploadFile = File(...), top_k: int = 5):
+    contents = await file.read()  # Get bytes
+    # Process image bytes with PIL and CLIP
+```
+
+### Error Response Structure
+```python
+# Consistent error responses
+raise HTTPException(status_code=503, detail="Service not initialized")
+raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+```
+
+## API Response Data Structures
+
+### Search Results Response
+```python
+{
+    "predicted_category": str,           # Predicted category name
+    "category_confidence": float,        # Confidence score (0.0-1.0)
+    "top_matches": [                     # List of similar products
+        {
+            "product_id": str,           # Shopify product ID
+            "title": str,                # Product title
+            "category_from_db": str,     # Original category from Shopify
+            "similarity_score": float,   # Cosine similarity score
+            "image_url": str            # Original Shopify image URL
+        }
+    ]
+}
+```
+
+### Product Metadata Structure (Internal)
+```python
+{
+    "id": int,                          # Shopify product ID
+    "title": str,                       # Product title
+    "category": str,                    # Product type from Shopify
+    "original_image_url": str,          # Original Shopify image URL
+    "local_image_path": str            # Path to cached image file
+}
+```
+
+## Gradio Frontend Patterns
+
+### Image Upload and API Communication
+```python
+def search_image_via_api(query_image_pil):
+    # Convert PIL to bytes
+    byte_arr = io.BytesIO()
+    query_image_pil.save(byte_arr, format='PNG')
+    image_bytes = byte_arr.getvalue()
+    
+    # POST to FastAPI
+    files = {'file': ('query_image.png', image_bytes, 'image/png')}
+    response = requests.post(FASTAPI_BACKEND_URL, files=files)
+```
+
+### Result Formatting
+```python
+# Format results as Markdown for Gradio display
+output_text = f"**Predicted Category:** {data['predicted_category']}\n"
+output_text += f"**Confidence:** {data['category_confidence']:.2f}\n\n"
+```
+
+## Error Handling Patterns
+
+### Graceful Degradation
+- Continue without category classification if classifier fails to load
+- Skip invalid images but process remaining products
+- Return partial results if some models are unavailable
+
+### Network Error Handling
+```python
+try:
+    response = requests.post(url, files=files, timeout=30)
+    response.raise_for_status()
+except requests.exceptions.ConnectionError:
+    return "Backend API not available"
+except requests.exceptions.HTTPError as e:
+    return f"API Error: {e.response.status_code}"
+```
+
+## CORS and Security
+- Enable CORS for cross-origin requests between Gradio and FastAPI
+- Use `allow_origins=["*"]` for development only
+- Validate file uploads (image format, size limits)
+- Sanitize filenames for local storage
+
+## Performance Considerations
+- Load models once at startup, not per request
+- Use async/await for I/O operations
+- Implement request timeout limits
+- Consider connection pooling for external API calls

@@ -1,0 +1,521 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Neural Architecture Components
+
+## Core Neural Network Modules
+
+### VisualAttentionAggregator Implementation
+**Primary component for multi-image aggregation using learned attention:**
+
+```python
+# neural_components.py
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+
+class VisualAttentionAggregator(nn.Module):
+    """
+    Hierarchical attention pooling for multiple product views
+    Replaces simple averaging with learned attention weights
+    """
+    def __init__(self, embed_dim=512, num_heads=8, dropout=0.1):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        
+        # Learnable query vector for attention
+        self.query = nn.Parameter(torch.randn(embed_dim))
+        
+        # Multi-head self-attention
+        self.self_attn = nn.MultiheadAttention(
+            embed_dim, num_heads, dropout=dropout, batch_first=True
+        )
+        
+        # Layer normalization and feedforward
+        self.layer_norm1 = nn.LayerNorm(embed_dim)
+        self.layer_norm2 = nn.LayerNorm(embed_dim)
+        self.feedforward = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 4, embed_dim)
+        )
+        
+    def forward(self, image_embeddings):
+        """
+        Args:
+            image_embeddings: [N_images, embed_dim] - multiple views of same product
+        Returns:
+            aggregated: [embed_dim] - single product representation
+        """
+        # Ensure input is 2D: [N_images, embed_dim]
+        if len(image_embeddings.shape) == 1:
+            image_embeddings = image_embeddings.unsqueeze(0)
+        
+        N, D = image_embeddings.shape
+        
+        # Expand query to match batch
+        query = self.query.unsqueeze(0).expand(N, -1)  # [N, embed_dim]
+        
+        # Self-attention across views
+        attn_output, attn_weights = self.self_attn(
+            image_embeddings, image_embeddings, image_embeddings
+        )
+        
+        # Residual connection and layer norm
+        attn_output = self.layer_norm1(image_embeddings + attn_output)
+        
+        # Feedforward
+        ff_output = self.feedforward(attn_output)
+        ff_output = self.layer_norm2(attn_output + ff_output)
+        
+        # Global attention pooling using learnable query
+        attention_scores = torch.matmul(ff_output, query.unsqueeze(-1)).squeeze(-1)
+        attention_weights = F.softmax(attention_scores / np.sqrt(D), dim=0)
+        
+        # Weighted aggregation
+        aggregated = torch.sum(ff_output * attention_weights.unsqueeze(-1), dim=0)
+        
+        return aggregated, attention_weights
+```
+
+### TextureEnhancer Network
+**Convolutional network for fabric pattern and texture discrimination:**
+
+```python
+class TextureEnhancer(nn.Module):
+    """
+    Multi-scale convolutional network for texture pattern extraction
+    Designed specifically for fabric and clothing pattern recognition
+    """
+    def __init__(self, input_channels=3, output_dim=512, num_scales=3):
+        super().__init__()
+        self.num_scales = num_scales
+        
+        # Multi-scale feature extraction branches
+        self.scale_branches = nn.ModuleList()
+        for i in range(num_scales):
+            scale_factor = 2 ** i
+            branch = nn.Sequential(
+                nn.Conv2d(input_channels, 32 * scale_factor, 
+                         kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(32 * scale_factor),
+                nn.ReLU(inplace=True),
+                
+                nn.Conv2d(32 * scale_factor, 64 * scale_factor, 
+                         kernel_size=3, stride=2, padding=1),
+                nn.BatchNorm2d(64 * scale_factor),
+                nn.ReLU(inplace=True),
+                
+                nn.Conv2d(64 * scale_factor, 128 * scale_factor, 
+                         kernel_size=3, stride=2, padding=1),
+                nn.BatchNorm2d(128 * scale_factor),
+                nn.ReLU(inplace=True),
+            )
+            self.scale_branches.append(branch)
+        
+        # Adaptive pooling and fusion
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+        
+        # Calculate total features from all scales
+        total_features = sum(128 * (2 ** i) * 16 for i in range(num_scales))
+        
+        # Feature fusion and dimensionality reduction
+        self.fusion = nn.Sequential(
+            nn.Linear(total_features, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(1024, output_dim),
+            nn.LayerNorm(output_dim)
+        )
+        
+    def forward(self, image):
+        """
+        Args:
+            image: [B, 3, H, W] or [3, H, W] - input image tensor
+        Returns:
+            texture_features: [B, output_dim] or [output_dim] - texture embeddings
+        """
+        if len(image.shape) == 3:
+            image = image.unsqueeze(0)  # Add batch dimension
+            squeeze_output = True
+        else:
+            squeeze_output = False
+        
+        # Extract features at multiple scales
+        scale_features = []
+        for branch in self.scale_branches:
+            features = branch(image)
+            pooled = self.adaptive_pool(features)
+            scale_features.append(pooled.flatten(1))
+        
+        # Concatenate multi-scale features
+        fused_features = torch.cat(scale_features, dim=1)
+        
+        # Final feature fusion
+        texture_embeddings = self.fusion(fused_features)
+        
+        if squeeze_output:
+            texture_embeddings = texture_embeddings.squeeze(0)
+        
+        return texture_embeddings
+```
+
+## Multi-Scale CLIP Feature Extraction
+
+### Enhanced CLIP Processing
+**Advanced CLIP usage with layer fusion for texture awareness:**
+
+```python
+# texture_features.py
+from transformers import CLIPModel, CLIPProcessor
+import torch
+
+class MultiScaleCLIPExtractor:
+    """
+    Enhanced CLIP feature extraction with multi-layer fusion
+    Optimized for textile pattern and texture recognition
+    """
+    def __init__(self, model_name="openai/clip-vit-base-patch32"):
+        self.model = CLIPModel.from_pretrained(model_name)
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.model.eval()
+        
+        # Layers to fuse for texture information (empirically determined)
+        self.texture_layers = [4, 5, 6, 7, 8]
+        
+    def extract_texture_features(self, image):
+        """
+        Extract texture-aware features using multi-layer CLIP fusion
+        
+        Args:
+            image: PIL Image or torch.Tensor
+        Returns:
+            features: [embed_dim] - normalized texture features
+        """
+        # Preprocess image
+        if not isinstance(image, torch.Tensor):
+            inputs = self.processor(images=image, return_tensors="pt")
+            pixel_values = inputs.pixel_values
+        else:
+            pixel_values = image.unsqueeze(0) if len(image.shape) == 3 else image
+        
+        with torch.no_grad():
+            # Get vision features with hidden states
+            vision_outputs = self.model.vision_model(
+                pixel_values, output_hidden_states=True
+            )
+            
+            # Extract and fuse texture-relevant layers
+            hidden_states = vision_outputs.hidden_states
+            texture_layers_features = [
+                hidden_states[i] for i in self.texture_layers
+            ]
+            
+            # Pool and concatenate features from multiple layers
+            pooled_features = []
+            for layer_features in texture_layers_features:
+                # Global average pooling across spatial dimensions
+                pooled = layer_features.mean(dim=1)  # [batch, embed_dim]
+                pooled_features.append(pooled)
+            
+            # Concatenate and project to standard dimension
+            fused_features = torch.cat(pooled_features, dim=-1)
+            
+            # Project back to standard CLIP dimension
+            projection = torch.nn.Linear(
+                fused_features.shape[-1], 512, bias=False
+            ).to(fused_features.device)
+            
+            # Initialize projection with average weights
+            with torch.no_grad():
+                projection.weight.data.fill_(1.0 / len(self.texture_layers))
+            
+            projected_features = projection(fused_features)
+            
+            # L2 normalize for cosine similarity
+            normalized_features = F.normalize(projected_features, p=2, dim=-1)
+            
+            return normalized_features.squeeze(0) if len(image.shape) == 3 else normalized_features
+```
+
+## Training and Optimization Patterns
+
+### Model Training Pipeline
+**Training procedures for custom neural components:**
+
+```python
+# training.py
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+import wandb  # For experiment tracking
+
+class ContrastiveLoss(nn.Module):
+    """
+    Contrastive loss for similar/dissimilar product pairs
+    Optimized for multi-view product matching
+    """
+    def __init__(self, margin=1.0, temperature=0.07):
+        super().__init__()
+        self.margin = margin
+        self.temperature = temperature
+        
+    def forward(self, embeddings1, embeddings2, labels):
+        """
+        Args:
+            embeddings1, embeddings2: [B, embed_dim] - product embeddings
+            labels: [B] - 1 for similar, 0 for dissimilar
+        """
+        # Cosine similarity
+        similarity = F.cosine_similarity(embeddings1, embeddings2)
+        
+        # Contrastive loss
+        positive_loss = labels * (1 - similarity) ** 2
+        negative_loss = (1 - labels) * torch.clamp(similarity - self.margin, min=0) ** 2
+        
+        return torch.mean(positive_loss + negative_loss)
+
+def train_attention_aggregator(train_loader, val_loader, num_epochs=100):
+    """
+    Training procedure for VisualAttentionAggregator
+    """
+    model = VisualAttentionAggregator(embed_dim=512, num_heads=8)
+    criterion = ContrastiveLoss(margin=0.3)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    
+    # Initialize wandb tracking
+    wandb.init(project="product-search", name="attention-aggregator")
+    wandb.watch(model)
+    
+    best_val_loss = float('inf')
+    
+    for epoch in range(num_epochs):
+        # Training phase
+        model.train()
+        train_loss = 0
+        
+        for batch_idx, (images1, images2, labels) in enumerate(train_loader):
+            optimizer.zero_grad()
+            
+            # Aggregate multi-view images
+            emb1, _ = model(images1)
+            emb2, _ = model(images2)
+            
+            loss = criterion(emb1, emb2, labels)
+            loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            optimizer.step()
+            train_loss += loss.item()
+            
+            if batch_idx % 100 == 0:
+                wandb.log({
+                    "batch_loss": loss.item(),
+                    "learning_rate": scheduler.get_last_lr()[0]
+                })
+        
+        # Validation phase
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for images1, images2, labels in val_loader:
+                emb1, _ = model(images1)
+                emb2, _ = model(images2)
+                val_loss += criterion(emb1, emb2, labels).item()
+        
+        val_loss /= len(val_loader)
+        scheduler.step()
+        
+        # Logging
+        wandb.log({
+            "epoch": epoch,
+            "train_loss": train_loss / len(train_loader),
+            "val_loss": val_loss,
+        })
+        
+        # Save best model
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), 'visual_attention_aggregator.pth')
+            wandb.save('visual_attention_aggregator.pth')
+    
+    return model
+```
+
+## Model Integration Patterns
+
+### Complete Pipeline Integration
+**Combining all neural components for inference:**
+
+```python
+# visual_aggregation.py
+class CompleteVisualPipeline:
+    """
+    End-to-end visual processing pipeline combining all components
+    """
+    def __init__(self, device='cpu'):
+        self.device = device
+        
+        # Load all components
+        self.clip_extractor = MultiScaleCLIPExtractor()
+        self.texture_enhancer = TextureEnhancer().to(device)
+        self.attention_aggregator = VisualAttentionAggregator().to(device)
+        
+        # Load trained weights if available
+        self._load_trained_weights()
+        
+    def _load_trained_weights(self):
+        """Load pre-trained weights for custom components"""
+        try:
+            self.attention_aggregator.load_state_dict(
+                torch.load('visual_attention_aggregator.pth', map_location=self.device)
+            )
+            print("Loaded trained attention aggregator weights")
+        except FileNotFoundError:
+            print("Training attention aggregator from scratch")
+            
+        try:
+            self.texture_enhancer.load_state_dict(
+                torch.load('texture_enhancer.pth', map_location=self.device)
+            )
+            print("Loaded trained texture enhancer weights")
+        except FileNotFoundError:
+            print("Using randomly initialized texture enhancer")
+    
+    def process_product(self, image_list):
+        """
+        Process multiple images of a single product
+        
+        Args:
+            image_list: List of PIL Images or torch.Tensors
+        Returns:
+            final_embedding: [embed_dim] - aggregated product representation
+        """
+        if not image_list:
+            raise ValueError("Empty image list provided")
+        
+        # Extract CLIP features for all images
+        clip_features = []
+        texture_features = []
+        
+        for image in image_list:
+            # CLIP multi-layer features
+            clip_feat = self.clip_extractor.extract_texture_features(image)
+            clip_features.append(clip_feat)
+            
+            # Texture enhancement features
+            if isinstance(image, torch.Tensor):
+                texture_input = image.to(self.device)
+            else:
+                # Convert PIL to tensor
+                texture_input = transforms.ToTensor()(image).to(self.device)
+            
+            texture_feat = self.texture_enhancer(texture_input)
+            texture_features.append(texture_feat)
+        
+        # Stack features
+        stacked_clip = torch.stack(clip_features)
+        stacked_texture = torch.stack(texture_features)
+        
+        # Aggregate using attention
+        aggregated_clip, attention_weights = self.attention_aggregator(stacked_clip)
+        
+        # Weight texture features by same attention
+        aggregated_texture = torch.sum(
+            stacked_texture * attention_weights.unsqueeze(-1), dim=0
+        )
+        
+        # Combine CLIP and texture features
+        final_embedding = torch.cat([aggregated_clip, aggregated_texture], dim=-1)
+        
+        # Final normalization
+        final_embedding = F.normalize(final_embedding, p=2, dim=-1)
+        
+        return final_embedding, attention_weights
+```
+
+## Performance Monitoring
+
+### Metrics and Validation
+**Key performance indicators for neural components:**
+
+```python
+def evaluate_neural_pipeline(pipeline, test_dataset, k=5):
+    """
+    Comprehensive evaluation of the neural pipeline
+    """
+    metrics = {
+        'top1_accuracy': 0,
+        'top5_accuracy': 0,
+        'texture_recall': 0,
+        'attention_entropy': [],
+        'inference_time': []
+    }
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total_queries = 0
+    
+    for query_product, candidates in test_dataset:
+        start_time = time.time()
+        
+        # Process query
+        query_embedding, attention_weights = pipeline.process_product(
+            query_product['images']
+        )
+        
+        # Compute similarities with candidates
+        similarities = []
+        for candidate in candidates:
+            cand_embedding, _ = pipeline.process_product(candidate['images'])
+            similarity = F.cosine_similarity(
+                query_embedding.unsqueeze(0), 
+                cand_embedding.unsqueeze(0)
+            ).item()
+            similarities.append((candidate['id'], similarity))
+        
+        # Sort by similarity
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Check accuracy
+        ground_truth_id = query_product['id']
+        top5_ids = [sim[0] for sim in similarities[:5]]
+        
+        if similarities[0][0] == ground_truth_id:
+            correct_top1 += 1
+        if ground_truth_id in top5_ids:
+            correct_top5 += 1
+        
+        total_queries += 1
+        
+        # Track attention entropy (diversity measure)
+        entropy = -torch.sum(attention_weights * torch.log(attention_weights + 1e-8)).item()
+        metrics['attention_entropy'].append(entropy)
+        
+        # Track inference time
+        metrics['inference_time'].append(time.time() - start_time)
+    
+    metrics['top1_accuracy'] = correct_top1 / total_queries
+    metrics['top5_accuracy'] = correct_top5 / total_queries
+    metrics['avg_attention_entropy'] = np.mean(metrics['attention_entropy'])
+    metrics['avg_inference_time'] = np.mean(metrics['inference_time'])
+    
+    return metrics
+
+# Target performance metrics:
+# - Top-1 Accuracy: >92% (vs 78% baseline)
+# - Top-5 Accuracy: >98%
+# - Inference Time: <180ms per query
+# - Attention Entropy: 0.5-1.5 (balanced attention)
+```
+
+This neural architecture is specifically designed for the checked shirts POC with emphasis on texture discrimination and multi-view aggregation.

@@ -1,0 +1,80 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# File Structure & Component Responsibilities
+
+## Core Configuration Files
+- **[config.py](mdc:config.py)**: Central configuration management, model paths, neural network hyperparameters
+- **[requirements.txt](mdc:requirements.txt)**: Python dependencies including PyTorch and advanced ML libraries
+
+## Data Input
+- **[data.csv](mdc:data.csv)**: Shopify product catalog with multi-image structure:
+  - `shopify_product_id`: Unique product identifier (string)
+  - `title`: Product name/description (string)
+  - `images`: JSON array of multiple product view URLs
+  - `preview_image`: Primary product image URL
+
+## Phase 1: Advanced Feature Extraction Pipeline
+- **[process_csv_data.py](mdc:process_csv_data.py)**: 
+  - Parses multi-image JSON arrays from CSV
+  - Downloads and validates multiple product views
+  - Creates organized image cache with view-specific naming
+  - Outputs: `processed_products.json`, `image_cache/` with multi-view structure
+
+- **[neural_components.py](mdc:neural_components.py)**:
+  - `VisualAttentionAggregator`: Multi-head attention for image aggregation
+  - `TextureEnhancer`: Convolutional layers for fabric pattern recognition
+  - `MultiScaleFeatureExtractor`: CLIP layer fusion utilities
+  - Custom PyTorch modules for advanced visual processing
+
+## Phase 2: Texture-Aware Index Building
+- **[build_engine.py](mdc:build_engine.py)**:
+  - Loads CLIP with multi-layer feature fusion (layers 4-8)
+  - Implements hierarchical attention pooling for multi-image products
+  - Creates texture-aware FAISS IVF-PQ index configuration
+  - Outputs: `texture_aware_index.faiss`, `product_metadata.pkl`, `attention_weights.pkl`
+
+## Phase 3 & 4: Advanced Runtime Application
+- **[main_api.py](mdc:main_api.py)**: FastAPI backend with neural components
+  - Loads attention aggregator and texture enhancement models
+  - Provides `/visual_search/` endpoint with multi-scale processing
+  - Implements texture re-ranking and similarity scoring
+  - Returns visual similarity matches with confidence scores
+
+- **[app_ui.py](mdc:app_ui.py)**: Enhanced Gradio interface
+  - Multi-image upload and comparison interface
+  - Visual similarity display with attention heatmaps
+  - Texture-focused result presentation
+  - Real-time query processing feedback
+
+## Neural Network Models & Weights
+- `visual_attention_aggregator.pth`: Trained attention pooling weights
+- `texture_enhancer.pth`: Fabric pattern recognition model weights
+- `clip_fusion_weights.pkl`: Multi-layer feature fusion parameters
+
+## Generated Data Files (Advanced Pipeline)
+- `texture_aware_index.faiss`: IVF-PQ compressed similarity index
+- `product_metadata.pkl`: Multi-image product information with aggregated features
+- `attention_weights.pkl`: Learned attention patterns for product views
+- `processed_products.json`: Multi-view product data with texture features
+- `image_cache/`: Organized multi-view product image storage
+  - `image_cache/product_123/view_1.jpg`
+  - `image_cache/product_123/view_2.jpg`
+  - `image_cache/product_123/preview.jpg`
+
+## Environment Setup
+- `venv/`: Python virtual environment with PyTorch and advanced ML libraries
+- `.gitignore`: Should exclude `venv/`, `image_cache/`, `*.pth`, `*.pkl`, `*.faiss`
+
+## Multi-Image CSV Format Example
+```csv
+shopify_product_id,title,images,preview_image
+"8526513733794","Grey Checks Slim Fit Shirt","[""https://cdn.shopify.com/image1.jpg"", ""https://cdn.shopify.com/image2.jpg"", ""https://cdn.shopify.com/image3.jpg""]","https://cdn.shopify.com/preview.jpg"
+```
+## Neural Architecture Files
+- **[attention_pooling.py](mdc:attention_pooling.py)**: Hierarchical attention implementation
+- **[texture_features.py](mdc:texture_features.py)**: Multi-scale CLIP adaptation
+- **[visual_aggregation.py](mdc:visual_aggregation.py)**: Multi-view product representation
+

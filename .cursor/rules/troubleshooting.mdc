@@ -1,0 +1,172 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Troubleshooting & Common Issues
+
+## Setup Issues
+
+### CSV Data Format Problems
+**Problem**: `KeyError` or `ValueError` when processing CSV
+**Solutions**: 
+- Verify CSV has required columns: `product_id`, `title`, `category`, `image_url` (or `image_path`)
+- Check CSV encoding (use UTF-8)
+- Validate data types and handle missing values
+- Test with: `pandas.read_csv('products.csv').info()`
+
+### Missing Dependencies  
+**Problem**: `ModuleNotFoundError` for transformers/torch/faiss/pandas
+**Solution**:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+# If torch issues: pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+## Data Pipeline Issues
+
+### Image Download/Access Failures
+**Problem**: Many images fail to download or local paths don't exist
+**Solutions**:
+- Check network connectivity for URL-based images
+- Verify local file paths exist and are accessible
+- Increase timeout in [process_csv_data.py](mdc:process_csv_data.py)
+- Handle mixed URL/local path scenarios
+- Check image file permissions
+
+### CSV Processing Errors
+**Problem**: `pandas.errors.ParserError` or encoding issues
+**Solutions**:
+```bash
+# Test CSV reading
+python -c "import pandas as pd; df = pd.read_csv('products.csv', encoding='utf-8'); print(df.head())"
+
+# Check for encoding issues
+python -c "with open('products.csv', 'rb') as f: print(f.read(100))"
+
+# Try different encodings
+python -c "import pandas as pd; df = pd.read_csv('products.csv', encoding='latin-1'); print('Success with latin-1')"
+```
+
+### FAISS Index Build Errors
+**Problem**: `build_engine.py` fails with memory or dimension errors
+**Solutions**:
+- Ensure sufficient RAM (4GB+)
+- Check that embeddings have consistent dimensions
+- Verify image_cache directory exists and has valid images
+- Monitor GPU/CPU usage during embedding generation
+
+### Model Loading Issues
+**Problem**: CLIP model fails to download or load
+**Solutions**:
+- Check internet connection for Hugging Face Hub
+- Clear transformers cache: `rm -rf ~/.cache/huggingface/`
+- Try different model variant: `openai/clip-vit-base-patch16-224`
+- Set HF_HOME environment variable if disk space issues
+
+## Runtime Issues  
+
+### FastAPI Startup Failures
+**Problem**: API fails to start, missing model files
+**Solutions**:
+- Ensure [build_engine.py](mdc:build_engine.py) completed successfully
+- Check all required files exist:
+  - `product_index.faiss`
+  - `product_metadata.pkl` 
+  - `category_classifier.joblib`
+  - `category_label_encoder.pkl`
+- Review startup logs for specific missing files
+
+### Gradio Connection Errors
+**Problem**: Gradio can't connect to FastAPI backend
+**Solutions**:
+- Ensure FastAPI is running on http://127.0.0.1:8000
+- Check FASTAPI_BACKEND_URL in [app_ui.py](mdc:app_ui.py)
+- Verify CORS settings in [main_api.py](mdc:main_api.py)
+- Test API directly: `curl http://127.0.0.1:8000/`
+
+### Poor Search Results
+**Problem**: Search returns irrelevant products
+**Solutions**:
+- Verify embeddings are normalized (L2 norm = 1.0)
+- Check FAISS index uses IndexFlatIP for cosine similarity
+- Ensure query images are preprocessed consistently
+- Consider different CLIP model variants for better domain fit
+- Validate that categories in CSV are meaningful and consistent
+
+## Data Quality Issues
+
+### Inconsistent Product Categories
+**Problem**: Category classifier performs poorly
+**Solutions**:
+- Review category distribution in CSV: `pandas.value_counts(df['category'])`
+- Ensure categories are consistent (case-sensitive)
+- Combine similar categories if too granular
+- Need minimum 10+ examples per category for good classification
+
+### Image Quality Problems
+**Problem**: Many images fail to process or give poor embeddings
+**Solutions**:
+- Check image formats are supported (JPEG, PNG, WebP, GIF)
+- Validate image files aren't corrupted
+- Consider image size limits (very large images may cause memory issues)
+- Use PIL to verify images: `Image.open(path).verify()`
+
+## Debugging Commands
+
+### Test CSV Processing
+```bash
+# Basic CSV validation
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); print(f'Shape: {df.shape}'); print(df.columns.tolist())"
+
+# Check for duplicates
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); print(f'Duplicates: {df.duplicated().sum()}')"
+
+# Category distribution
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); print(df['category'].value_counts())"
+```
+
+### Test Individual Components
+```bash
+# Test image processing
+python -c "from PIL import Image; img = Image.open('test_image.jpg'); print(f'Size: {img.size}, Format: {img.format}')"
+
+# Test CLIP model loading
+python -c "from transformers import CLIPModel; CLIPModel.from_pretrained('openai/clip-vit-base-patch32')"
+
+# Test FAISS index
+python -c "import faiss; idx = faiss.read_index('product_index.faiss'); print(f'Index has {idx.ntotal} vectors')"
+
+# Test FastAPI endpoint
+curl -X POST "http://127.0.0.1:8000/search_products/" -F "file=@test_image.jpg"
+```
+
+### Check Data Integrity
+```bash
+# Verify processed products
+python -c "import json; data = json.load(open('processed_products.json')); print(f'Processed {len(data)} products')"
+
+# Check image cache
+ls -la image_cache/ | wc -l
+
+# Validate embeddings
+python -c "import numpy as np; import faiss; idx = faiss.read_index('product_index.faiss'); vec = idx.reconstruct(0); print(f'Embedding norm: {np.linalg.norm(vec):.4f}')"
+```
+
+## Performance Issues
+
+### Slow Processing
+**Problem**: CSV processing or embedding generation is very slow
+**Solutions**:
+- Process images in smaller batches
+- Use multiprocessing for image downloads
+- Consider resizing very large images before processing
+- Monitor memory usage and optimize batch sizes
+
+## Log Analysis
+- **CSV Processing**: Look for pandas warnings about data types or missing values
+- **FastAPI**: Look for model loading errors in uvicorn output
+- **Gradio**: Check browser console for network errors
+- **CLIP**: Monitor transformers download progress
+- **FAISS**: Watch for memory allocation warnings

@@ -1,0 +1,197 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Dependencies & Requirements
+
+## Core ML Dependencies
+```txt
+# Computer Vision & Deep Learning
+transformers>=4.30.0          # Hugging Face transformers for CLIP
+torch>=2.0.0                  # PyTorch for neural networks
+torchvision>=0.15.0          # Vision utilities and transforms
+torchaudio>=2.0.0            # Audio support (CLIP dependency)
+faiss-cpu>=1.7.4             # FAISS for similarity search (CPU version)
+# faiss-gpu>=1.7.4           # Alternative: GPU version for better performance
+```
+
+## Advanced Neural Network Components
+```txt
+# Custom Neural Architecture
+torch-geometric>=2.3.0        # Graph neural networks (if needed for attention)
+einops>=0.6.0                 # Tensor operations for multi-dimensional arrays
+timm>=0.9.0                   # Image models and utilities
+```
+
+## Data Processing & Multi-Image Handling
+```txt
+# Data handling
+pandas>=2.0.0                # CSV processing and data manipulation
+numpy>=1.24.0                # Numerical computing
+```
+
+## Image Processing & Computer Vision
+```txt
+# Image handling
+Pillow>=10.0.0               # PIL for image processing
+opencv-python>=4.8.0         # Advanced image preprocessing
+albumentations>=1.3.0        # Image augmentation for training
+torchvision-transforms>=0.15.0  # Enhanced image transformations
+```
+
+## Web Framework & API
+```txt
+# Backend API
+fastapi>=0.100.0             # Modern async web framework
+uvicorn[standard]>=0.23.0    # ASGI server for FastAPI
+python-multipart>=0.0.6     # File upload support for FastAPI
+```
+
+## Frontend UI & Visualization
+```txt
+# User interface
+gradio>=3.40.0               # ML demo interface
+matplotlib>=3.7.0            # Visualization for attention maps
+plotly>=5.15.0               # Interactive visualizations
+seaborn>=0.12.0             # Statistical plots
+```
+
+## Training & Experiment Tracking
+```txt
+# Model training and monitoring
+wandb>=0.15.0                # Experiment tracking and logging
+tensorboard>=2.13.0          # Alternative experiment tracking
+tqdm>=4.65.0                 # Progress bars for training
+scikit-learn>=1.3.0          # Metrics and evaluation utilities
+```
+
+## Networking & Utilities
+```txt
+# HTTP requests and utilities
+requests>=2.31.0             # HTTP requests for image downloads
+urllib3>=2.0.0              # URL handling utilities
+aiohttp>=3.8.0              # Async HTTP for parallel downloads
+```
+
+## Serialization & Storage
+```txt
+# Model and data persistence
+joblib>=1.3.0                # Sklearn model serialization
+pickle                       # Built-in Python serialization
+json                         # Built-in JSON handling
+h5py>=3.9.0                 # HDF5 for large data storage
+```
+
+## Performance & Optimization
+```txt
+# Performance optimization
+numba>=0.57.0               # JIT compilation for numerical code
+psutil>=5.9.0               # System resource monitoring
+concurrent-futures>=3.1.1   # Parallel processing utilities
+```
+
+## Complete requirements.txt
+The [requirements.txt](mdc:requirements.txt) file should contain:
+```txt
+# Core ML and Deep Learning
+transformers>=4.30.0
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+faiss-cpu>=1.7.4
+einops>=0.6.0
+timm>=0.9.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Image Processing
+Pillow>=10.0.0
+opencv-python>=4.8.0
+albumentations>=1.3.0
+
+# Web Framework
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+
+# Frontend and Visualization
+gradio>=3.40.0
+matplotlib>=3.7.0
+plotly>=5.15.0
+seaborn>=0.12.0
+
+# Training and Monitoring
+wandb>=0.15.0
+tensorboard>=2.13.0
+tqdm>=4.65.0
+scikit-learn>=1.3.0
+
+# Networking and Utilities
+requests>=2.31.0
+urllib3>=2.0.0
+aiohttp>=3.8.0
+
+# Storage and Optimization
+joblib>=1.3.0
+h5py>=3.9.0
+numba>=0.57.0
+psutil>=5.9.0
+```
+
+## GPU Acceleration (Optional)
+```txt
+# For GPU acceleration (requires CUDA installation)
+faiss-gpu>=1.7.4             # GPU-accelerated similarity search
+torch-audio-gpu>=2.0.0       # GPU audio processing
+```
+
+## Development Dependencies
+```txt
+# Development and debugging
+jupyter>=1.0.0               # For data exploration and model development
+ipython>=8.0.0              # Interactive Python
+pytest>=7.4.0               # Testing framework
+black>=23.0.0               # Code formatting
+flake8>=6.0.0               # Code linting
+```
+
+## Installation Notes
+- **PyTorch**: Will auto-detect CUDA if available, otherwise uses CPU
+- **FAISS**: CPU version included by default; GPU version available for better performance
+- **Transformers**: Automatically downloads CLIP models on first use (~1.7GB)
+- **Wandb**: Requires account for experiment tracking (free tier available)
+- **Memory**: Full neural pipeline requires ~6-8GB RAM when running
+
+## Neural Architecture Specific
+- **einops**: Essential for tensor manipulations in attention mechanisms
+- **timm**: Provides additional vision model utilities and optimizations
+- **albumentations**: Used for data augmentation during neural network training
+- **wandb**: Critical for tracking training progress and hyperparameter tuning
+
+## Multi-Image Processing Specific
+- **aiohttp**: For async image downloading from multiple URLs
+- **opencv-python**: Advanced image preprocessing and validation
+- **h5py**: Efficient storage of large embedding matrices
+- **numba**: JIT compilation for performance-critical embedding operations
+
+## System Requirements
+- **Python**: 3.9+ (3.10+ recommended for best PyTorch compatibility)
+- **RAM**: 8GB minimum, 16GB recommended for neural training
+- **Storage**: 5GB for models, variable for image cache (depends on dataset size)
+- **GPU**: Optional but recommended (RTX 3060+ or equivalent for training)
+- **Network**: Stable internet for model downloads and image URLs
+
+## Performance Optimization Tips
+```bash
+# Install with optimized PyTorch for your system
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118  # For CUDA 11.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu    # For CPU only
+
+# Enable mixed precision training
+pip install apex  # NVIDIA Apex for FP16 training (optional)
+```
+
+This enhanced dependency set supports the complete neural architecture pipeline including attention mechanisms, texture enhancement, and advanced training capabilities.

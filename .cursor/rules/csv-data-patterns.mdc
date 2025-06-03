@@ -1,0 +1,326 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Multi-Image CSV Data Processing Patterns
+
+## Shopify CSV File Structure
+The [data.csv](mdc:data.csv) file contains Shopify product data with multiple images per product for enhanced visual matching.
+
+### Required Columns
+```csv
+shopify_product_id,title,images,preview_image
+```
+
+- **shopify_product_id**: Unique Shopify identifier (string, may contain commas)
+- **title**: Product name/description (string)
+- **images**: JSON array of multiple product view URLs (string)
+- **preview_image**: Primary product image URL (string)
+
+### Multi-Image JSON Structure
+Each product contains multiple views for comprehensive visual analysis:
+```csv
+shopify_product_id,title,images,preview_image
+"8,526,513,733,794","Grey Checks Slim Fit Shirt","[""https://cdn.shopify.com/image1.jpg"", ""https://cdn.shopify.com/image2.jpg"", ""https://cdn.shopify.com/image3.jpg""]","https://cdn.shopify.com/preview.jpg"
+```
+
+## Advanced Data Processing Workflow
+
+### 1. Multi-Image CSV Parsing in [process_csv_data.py](mdc:process_csv_data.py)
+```python
+import pandas as pd
+import json
+import ast
+from concurrent.futures import ThreadPoolExecutor
+
+def parse_shopify_csv(csv_path):
+    """Parse Shopify CSV with multi-image support"""
+    df = pd.read_csv(csv_path, encoding='utf-8')
+    
+    # Validate required columns
+    required_cols = ['shopify_product_id', 'title', 'images', 'preview_image']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    
+    # Clean and validate data
+    df['shopify_product_id'] = df['shopify_product_id'].astype(str)
+    df = df.dropna(subset=['shopify_product_id', 'title', 'images'])
+    
+    return df
+
+def parse_images_array(images_str):
+    """Parse JSON array of image URLs with error handling"""
+    try:
+        # Handle various JSON formats from Shopify export
+        if images_str.startswith('['):
+            # Try direct JSON parsing
+            images = json.loads(images_str)
+        else:
+            # Try AST literal eval for Python-like strings
+            images = ast.literal_eval(images_str)
+        
+        # Ensure all items are strings (URLs)
+        return [str(url).strip() for url in images if url]
+    except (json.JSONDecodeError, ValueError, SyntaxError) as e:
+        print(f"Failed to parse images array: {images_str[:100]}... Error: {e}")
+        return []
+```
+
+### 2. Multi-View Image Processing
+```python
+def process_multi_view_product(row):
+    """Download and process all views of a product"""
+    product_id = str(row['shopify_product_id']).replace(',', '')  # Clean ID
+    title = row['title']
+    
+    # Parse image URLs
+    images_urls = parse_images_array(row['images'])
+    preview_url = row['preview_image']
+    
+    # Create product-specific directory
+    product_dir = os.path.join('image_cache', f'product_{product_id}')
+    os.makedirs(product_dir, exist_ok=True)
+    
+    # Download all product views
+    downloaded_images = []
+    for i, url in enumerate(images_urls[:10]):  # Limit to 10 images
+        try:
+            local_path = download_image_to_cache(url, product_dir, f'view_{i+1}')
+            if local_path and validate_image(local_path):
+                downloaded_images.append({
+                    'path': local_path,
+                    'url': url,
+                    'view_index': i+1
+                })
+        except Exception as e:
+            print(f"Failed to download view {i+1} for product {product_id}: {e}")
+    
+    # Download preview image separately
+    preview_path = None
+    if preview_url:
+        try:
+            preview_path = download_image_to_cache(preview_url, product_dir, 'preview')
+        except Exception as e:
+            print(f"Failed to download preview for product {product_id}: {e}")
+    
+    if downloaded_images:  # Only return if at least one image downloaded
+        return {
+            'id': product_id,
+            'title': title,
+            'images': downloaded_images,
+            'preview_path': preview_path,
+            'num_views': len(downloaded_images),
+            'preview_url': preview_url
+        }
+    
+    return None
+
+def parallel_multi_image_processing(df, max_workers=8):
+    """Process all products with parallel downloading"""
+    print(f"Processing {len(df)} products with up to {max_workers} workers...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        processed_products = list(executor.map(
+            process_multi_view_product, 
+            df.itertuples(index=False)
+        ))
+    
+    # Filter successful downloads
+    valid_products = [p for p in processed_products if p is not None]
+    print(f"Successfully processed {len(valid_products)} products")
+    
+    return valid_products
+```
+
+## Image Quality and Validation Patterns
+
+### Enhanced Image Validation
+```python
+from PIL import Image
+import requests
+from io import BytesIO
+
+def download_image_to_cache(url, product_dir, filename_prefix):
+    """Download and validate image with proper error handling"""
+    try:
+        response = requests.get(url, timeout=10, stream=True)
+        response.raise_for_status()
+        
+        # Validate image before saving
+        img_data = BytesIO(response.content)
+        img = Image.open(img_data)
+        img.verify()  # Verify it's a valid image
+        
+        # Reset stream and save
+        img_data.seek(0)
+        img = Image.open(img_data)
+        img = img.convert('RGB')  # Ensure consistent format
+        
+        # Generate safe filename
+        ext = url.split('.')[-1].split('?')[0][:4]  # Get extension, remove query params
+        if ext.lower() not in ['jpg', 'jpeg', 'png', 'webp']:
+            ext = 'jpg'
+        
+        local_path = os.path.join(product_dir, f'{filename_prefix}.{ext}')
+        img.save(local_path, 'JPEG', quality=85)
+        
+        return local_path
+        
+    except Exception as e:
+        print(f"Error downloading image from {url}: {e}")
+        return None
+
+def validate_image(image_path):
+    """Validate downloaded image quality and format"""
+    try:
+        with Image.open(image_path) as img:
+            # Check minimum size requirements
+            if img.size[0] < 100 or img.size[1] < 100:
+                print(f"Image too small: {img.size}")
+                return False
+            
+            # Check if image is corrupted
+            img.verify()
+            return True
+            
+    except Exception as e:
+        print(f"Image validation failed for {image_path}: {e}")
+        return False
+```
+
+## Data Structure Optimization
+
+### Product Metadata Generation
+```python
+def create_optimized_metadata(processed_products):
+    """Create optimized metadata structure for neural processing"""
+    metadata = []
+    
+    for product in processed_products:
+        # Create view-specific metadata
+        views_metadata = []
+        for img_info in product['images']:
+            views_metadata.append({
+                'path': img_info['path'],
+                'view_index': img_info['view_index'],
+                'original_url': img_info['url']
+            })
+        
+        metadata.append({
+            'id': product['id'],
+            'title': product['title'],
+            'views': views_metadata,
+            'preview_path': product['preview_path'],
+            'num_views': product['num_views'],
+            'embedding_index': len(metadata)  # Index in FAISS
+        })
+    
+    return metadata
+
+def save_processed_data(processed_products, output_path='processed_products.json'):
+    """Save processed data with optimized structure"""
+    metadata = create_optimized_metadata(processed_products)
+    
+    with open(output_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"Saved metadata for {len(metadata)} products to {output_path}")
+    return metadata
+```
+
+## Performance and Memory Optimization
+
+### Batch Processing for Large Datasets
+```python
+def process_csv_in_batches(csv_path, batch_size=500):
+    """Process large CSV files in batches to manage memory"""
+    df = pd.read_csv(csv_path, encoding='utf-8')
+    total_products = len(df)
+    all_processed = []
+    
+    for i in range(0, total_products, batch_size):
+        batch_df = df.iloc[i:i+batch_size]
+        print(f"Processing batch {i//batch_size + 1}: products {i+1}-{min(i+batch_size, total_products)}")
+        
+        batch_processed = parallel_multi_image_processing(batch_df)
+        all_processed.extend(batch_processed)
+        
+        # Save intermediate results
+        if i % (batch_size * 5) == 0:  # Save every 5 batches
+            intermediate_path = f'processed_batch_{i//batch_size}.json'
+            save_processed_data(batch_processed, intermediate_path)
+    
+    return all_processed
+```
+
+## Data Validation Commands
+
+### CSV Structure Validation
+```bash
+# Check CSV structure and sample data
+python -c "
+import pandas as pd
+import json
+df = pd.read_csv('data.csv')
+print(f'Total products: {len(df)}')
+print(f'Columns: {list(df.columns)}')
+print('\nSample images array:')
+print(df['images'].iloc[0][:200] + '...')
+"
+
+# Validate image URLs accessibility
+python -c "
+import pandas as pd
+import json
+import requests
+df = pd.read_csv('data.csv')
+sample_images = json.loads(df['images'].iloc[0])
+test_url = sample_images[0]
+response = requests.head(test_url, timeout=5)
+print(f'Sample image URL status: {response.status_code}')
+"
+
+# Check for products with multiple views
+python -c "
+import pandas as pd
+import json
+df = pd.read_csv('data.csv')
+view_counts = []
+for images_str in df['images'].head(10):
+    try:
+        images = json.loads(images_str)
+        view_counts.append(len(images))
+    except:
+        view_counts.append(0)
+print(f'View counts for first 10 products: {view_counts}')
+print(f'Average views per product: {sum(view_counts)/len(view_counts):.1f}')
+"
+```
+
+## Checked Shirts POC Focus
+
+### Product Filtering for Textile Analysis
+```python
+def filter_checked_shirts(df):
+    """Filter CSV for checked shirt products (POC focus)"""
+    # Enhanced pattern matching for checked shirts
+    checked_patterns = [
+        'check', 'checks', 'checked', 'plaid', 'gingham', 
+        'tartan', 'buffalo check', 'windowpane'
+    ]
+    
+    shirt_patterns = ['shirt', 'shirts']
+    
+    # Filter by title containing both shirt and check patterns
+    mask = df['title'].str.lower().str.contains('|'.join(checked_patterns), na=False) & \
+           df['title'].str.lower().str.contains('|'.join(shirt_patterns), na=False)
+    
+    filtered_df = df[mask]
+    print(f"Filtered {len(filtered_df)} checked shirts from {len(df)} total products")
+    
+    return filtered_df
+```
+
+This multi-image processing pipeline is optimized for the checked shirts POC, targeting 94% accuracy in texture discrimination and pattern matching.

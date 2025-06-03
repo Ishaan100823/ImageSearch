@@ -1,0 +1,87 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Development Workflow & Execution Guide
+
+## Initial Setup (One-Time)
+1. **Environment Setup**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # macOS/Linux
+   pip install -r requirements.txt
+   ```
+
+2. **Data Preparation**:
+   - Prepare your  data file with required columns
+   - Ensure image URLs are accessible or local image paths exist
+   - Validate CSV format and data quality
+
+## Phase 1: Data Pipeline (One-Time Execution)
+**Execute in this exact order:**
+
+1. **Process CSV Data**:
+   ```bash
+   python process_csv_data.py
+   ```
+   - Validates CSV format and data
+   - Downloads images from URLs (if applicable)
+   - Creates local image cache with consistent naming
+   - Outputs `processed_products.json`
+
+2. **Build Search Engine**:
+   ```bash
+   python build_engine.py
+   ```
+   - Generates CLIP embeddings for all images
+   - Creates FAISS similarity index
+   - Trains category classifier
+   - Takes 10-60 minutes depending on dataset size
+
+## Phase 2 & 3: Running the Application
+**Two terminals required:**
+
+**Terminal 1 - Backend API**:
+```bash
+source venv/bin/activate
+uvicorn main_api:app --reload
+# Runs on http://127.0.0.1:8000
+```
+
+**Terminal 2 - Frontend UI**:
+```bash
+source venv/bin/activate
+python app_ui.py
+# Runs on http://127.0.0.1:7860
+```
+
+## CSV Data Requirements
+- **Required columns**: `product_id`, `title`, `category`, `image_url` (or `image_path`)
+- **Image sources**: URLs (http/https) or local file paths
+- **Supported formats**: JPEG, PNG, WebP, GIF via PIL
+- **Encoding**: UTF-8 recommended for international characters
+
+## Development Tips
+- **API Documentation**: Visit `http://127.0.0.1:8000/docs` for interactive FastAPI docs
+- **Restart Order**: If models change, restart FastAPI first, then Gradio
+- **Memory Usage**: CLIP + FAISS can use 2-4GB RAM
+- **Image Processing**: System handles mixed URL/local path inputs
+- **Batch Processing**: Large datasets processed in batches to manage memory
+
+## Data Validation Commands
+```bash
+# Check CSV format
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); print(df.head()); print(f'Shape: {df.shape}')"
+
+# Validate required columns
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); required = ['product_id', 'title', 'category']; missing = [col for col in required if col not in df.columns]; print('Missing columns:', missing if missing else 'None')"
+
+# Check for image column
+python -c "import pandas as pd; df = pd.read_csv('products.csv'); has_url = 'image_url' in df.columns; has_path = 'image_path' in df.columns; print(f'Has image_url: {has_url}, Has image_path: {has_path}')"
+```
+
+## Debugging Commands
+- Test image processing: `python -c "from PIL import Image; img = Image.open('test_image.jpg'); print(img.size, img.format)"`
+- Check processed data: `python -c "import json; data = json.load(open('processed_products.json')); print(f'Processed {len(data)} products')"`
+- Validate FAISS index: `python -c "import faiss; idx = faiss.read_index('product_index.faiss'); print(f'Index has {idx.ntotal} vectors')"`
