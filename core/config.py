@@ -19,13 +19,20 @@ class ProcessConfig:
 @dataclass
 class DataConfig:
     """Data processing configuration"""
-    csv_file: str = "data.csv"
+    csv_file: str = "products.csv"
     image_cache_dir: str = "image_cache"
     processed_products_file: str = "processed_products.json"
-    max_images_per_product: int = 10
+    max_images_per_product: int = 6
     min_image_size: tuple = (100, 100)
     image_formats: List[str] = field(default_factory=lambda: ['jpg', 'jpeg', 'png', 'webp'])
-    download_timeout: int = 10
+    download_timeout: int = 15
+    
+    # Multi-category dataset configuration
+    expected_categories: List[str] = field(default_factory=lambda: [
+        'Hoodies', 'Jeans', 'Shirts', 'Sweaters', 'T-Shirts', 'Trousers'
+    ])
+    products_per_category: int = 30
+    total_expected_products: int = 180
     
 @dataclass
 class ModelConfig:
@@ -40,8 +47,10 @@ class IndexConfig:
     """FAISS index configuration"""
     index_file: str = "product_index.faiss"
     metadata_file: str = "product_metadata.pkl"
-    index_type: str = "flat"  # flat, ivf, hnsw
+    embeddings_file: str = "product_embeddings.npy"
+    index_type: str = "flat_ip"
     similarity_metric: str = "cosine"
+    build_on_gpu: bool = False
     
 @dataclass
 class APIConfig:
@@ -179,3 +188,4 @@ def config_api_only():
     """Run only API and UI"""
     config.enable_only(["api_server", "ui_frontend"])
     print("🚀 API-only mode enabled") 
+    

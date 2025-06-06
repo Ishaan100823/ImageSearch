@@ -15,8 +15,8 @@ from PIL import Image
 import time
 import re
 
-from config import config
-from utils.logging_utils import process_logger, create_progress_tracker
+from core.config import config
+from utils.logging_utils import logger, create_progress
 
 
 class DataValidator:
@@ -24,7 +24,6 @@ class DataValidator:
     
     def __init__(self):
         self.required_columns = ['shopify_product_id', 'title', 'images', 'preview_image']
-        self.logger = process_logger.logger
     
     def validate_csv_structure(self, csv_path: str) -> Tuple[bool, Dict]:
         """Validate CSV file structure and contents"""
@@ -63,7 +62,7 @@ class DataValidator:
             if sample_errors:
                 stats["sample_errors"] = sample_errors
             
-            self.logger.info(f"✅ CSV validation passed: {stats['total_rows']} products found")
+            logger.success(f"CSV validation passed: {stats['total_rows']} products found")
             return True, stats
             
         except Exception as e:
@@ -118,7 +117,6 @@ class ImageDownloader:
     """Downloads and caches product images with resume capability"""
     
     def __init__(self):
-        self.logger = process_logger.logger
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -149,8 +147,7 @@ class ImageDownloader:
             # Validate saved image
             return self._validate_saved_image(save_path)
             
-        except Exception as e:
-            self.logger.debug(f"Failed to download {url}: {str(e)}")
+        except Exception:
             return False
     
     def _validate_saved_image(self, image_path: str) -> bool:
@@ -200,24 +197,26 @@ class ImageDownloader:
         if preview_url:
             ext = self._get_image_extension(preview_url)
             preview_path = os.path.join(product_dir, f'preview.{ext}')
+            
             if not self.download_image(preview_url, preview_path, config.data.download_timeout):
                 preview_path = None
         
         return {
-            'id': clean_id,
-            'original_id': product_id,
-            'images': downloaded_images,
+            'product_id': product_id,
+            'product_dir': product_dir,
+            'downloaded_images': downloaded_images,
             'preview_path': preview_path,
-            'num_views': len(downloaded_images),
-            'preview_url': preview_url
+            'success': len(downloaded_images) > 0
         }
     
     def _get_image_extension(self, url: str) -> str:
-        """Extract image extension from URL"""
-        ext = url.split('.')[-1].split('?')[0][:4].lower()
-        if ext not in config.data.image_formats:
-            ext = 'jpg'
-        return ext
+        """Get safe image extension from URL"""
+        if '.webp' in url.lower():
+            return 'jpg'  # Convert webp to jpg for consistency
+        elif '.png' in url.lower():
+            return 'jpg'  # Convert to jpg for consistency
+        else:
+            return 'jpg'  # Default to jpg
 
 
 class CSVProcessor:
@@ -226,81 +225,83 @@ class CSVProcessor:
     def __init__(self):
         self.validator = DataValidator()
         self.downloader = ImageDownloader()
-        self.logger = process_logger.logger
     
     def validate_data(self) -> bool:
-        """Phase 1: Validate CSV data"""
+        """Phase 1: Data validation with NO WASTE"""
         if not config.processes["data_validation"].enabled:
-            self.logger.info("⏭️ Skipping data validation")
+            logger.info("⏭️ Skipping data validation")
             return True
         
-        process_config = config.processes["data_validation"]
+        # Check if already completed
+        checkpoint_file = config.processes["data_validation"].checkpoint_file
+        progress = create_progress("Data Validation", 1, checkpoint_file)
+        
+        if progress.skip_if_done("validation_complete"):
+            progress.finish()
+            return True
+        
+        logger.stage_start("Data Validation")
         start_time = time.time()
         
         try:
-            self.logger.info("🔍 Starting data validation...")
-            
             # Validate CSV structure
-            is_valid, validation_result = self.validator.validate_csv_structure(config.data.csv_file)
+            success, stats = self.validator.validate_csv_structure(config.data.csv_file)
             
-            if not is_valid:
-                self.logger.error(f"❌ Data validation failed: {validation_result}")
+            if not success:
+                logger.error(f"Data validation failed: {stats}")
                 return False
             
             # Save validation results
-            checkpoint_data = {
-                "validation_passed": True,
-                "validation_stats": validation_result,
-                "timestamp": time.time()
+            validation_data = {
+                'validation_passed': True,
+                'stats': stats,
+                'timestamp': time.time()
             }
             
-            with open(process_config.checkpoint_file, 'w') as f:
-                json.dump(checkpoint_data, f, indent=2)
+            with open(config.data.processed_products_file, 'w') as f:
+                json.dump(validation_data, f, indent=2)
+            
+            progress.mark_complete("validation_complete")
+            progress.finish()
             
             duration = time.time() - start_time
-            process_logger.log_process_complete("data_validation", duration, validation_result)
-            
+            logger.stage_complete("Data Validation", duration)
             return True
             
         except Exception as e:
-            process_logger.log_process_error("data_validation", e)
+            logger.error(f"Data validation error: {str(e)}")
             return False
     
     def download_images(self) -> bool:
-        """Phase 2: Download product images with resume capability"""
+        """Phase 2: Image download with smart resume"""
         if not config.processes["image_download"].enabled:
-            self.logger.info("⏭️ Skipping image download")
+            logger.info("⏭️ Skipping image download")
             return True
         
-        process_config = config.processes["image_download"]
+        logger.stage_start("Image Download")
         start_time = time.time()
         
         try:
-            # Load CSV data
+            # Load product data
             df = pd.read_csv(config.data.csv_file, encoding='utf-8')
             
             # Create progress tracker
-            tracker = create_progress_tracker(
-                "image_download",
-                len(df),
-                process_config.checkpoint_file,
-                "Downloading product images"
-            )
+            checkpoint_file = config.processes["image_download"].checkpoint_file
+            progress = create_progress("Image Download", len(df), checkpoint_file)
             
-            successful_downloads = []
-            failed_downloads = []
+            max_workers = config.processes["image_download"].max_workers
             
             def process_product_row(row_data):
-                """Process single product row"""
+                """Process single product with WASTE PREVENTION"""
                 idx, row = row_data
-                product_id = str(row['shopify_product_id'])
+                product_id = str(row['shopify_product_id']).replace(',', '')
                 
-                # Check if already completed
-                if tracker.is_completed(product_id):
+                # SKIP IF ALREADY DONE - KEY RESUME FEATURE
+                if progress.skip_if_done(product_id):
                     return None
                 
                 try:
-                    # Parse images
+                    # Parse image URLs
                     images_urls = self.validator._validate_images_array(row['images'])
                     preview_url = row.get('preview_image')
                     
@@ -309,104 +310,70 @@ class CSVProcessor:
                         product_id, images_urls, preview_url
                     )
                     
-                    if result['images']:  # At least one image downloaded successfully
-                        result['title'] = row['title']
-                        tracker.update(product_id, {"downloaded_images": len(result['images'])})
-                        return ("success", result)
-                    else:
-                        tracker.update(product_id, {"error": "no_images_downloaded"})
-                        return ("failed", {"id": product_id, "reason": "no_images_downloaded"})
-                        
+                    # Mark complete
+                    progress.mark_complete(product_id)
+                    return result
+                    
                 except Exception as e:
-                    tracker.update(product_id, {"error": str(e)})
-                    return ("failed", {"id": product_id, "reason": str(e)})
+                    logger.error(f"Failed to process product {product_id}: {str(e)}")
+                    # Still mark as complete to prevent infinite retries
+                    progress.mark_complete(product_id)
+                    return None
             
-            # Process with ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=process_config.max_workers) as executor:
+            # Process with thread pool
+            successful_downloads = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all tasks
                 future_to_product = {
-                    executor.submit(process_product_row, (idx, row)): (idx, row)
+                    executor.submit(process_product_row, (idx, row)): idx 
                     for idx, row in df.iterrows()
-                    if not tracker.is_completed(str(row['shopify_product_id']))
                 }
                 
-                # Process results as they complete
+                # Process completed tasks
                 for future in as_completed(future_to_product):
                     result = future.result()
-                    if result:
-                        status, data = result
-                        if status == "success":
-                            successful_downloads.append(data)
-                            tracker.set_postfix(
-                                Success=len(successful_downloads),
-                                Failed=len(failed_downloads)
-                            )
-                        else:
-                            failed_downloads.append(data)
+                    if result and result.get('success'):
+                        successful_downloads += 1
+                    
+                    # Save progress periodically
+                    if len(progress.checkpoint.completed_ids) % 10 == 0:
+                        progress.save()
             
-            # Close tracker and save results
-            tracker.close()
-            
-            # Save processed products
-            if successful_downloads:
-                with open(config.data.processed_products_file, 'w') as f:
-                    json.dump(successful_downloads, f, indent=2)
+            progress.finish()
             
             duration = time.time() - start_time
-            stats = {
-                "total_products": len(df),
-                "successful_downloads": len(successful_downloads),
-                "failed_downloads": len(failed_downloads),
-                "success_rate": len(successful_downloads) / len(df) * 100
-            }
-            
-            process_logger.log_process_complete("image_download", duration, stats)
-            
-            if len(successful_downloads) == 0:
-                self.logger.error("❌ No products were successfully processed")
-                return False
-            
+            logger.stage_complete("Image Download", duration)
+            logger.info(f"Successfully downloaded images for {successful_downloads} products")
             return True
             
         except Exception as e:
-            process_logger.log_process_error("image_download", e)
+            logger.error(f"Image download error: {str(e)}")
             return False
     
     def process_all(self) -> bool:
-        """Run complete CSV processing pipeline"""
-        self.logger.info("🚀 Starting CSV data processing pipeline...")
+        """Run both validation and download phases"""
+        logger.info("🚀 Starting CSV data processing")
         
-        # Phase 1: Data validation
+        # Phase 1: Validation
         if not self.validate_data():
+            logger.error("❌ Data validation failed")
             return False
         
         # Phase 2: Image download
         if not self.download_images():
+            logger.error("❌ Image download failed")
             return False
         
-        self.logger.info("✅ CSV processing pipeline completed successfully!")
+        logger.success("✅ CSV processing completed successfully")
         return True
 
 
 def main():
-    """Main function for standalone execution"""
-    from utils.logging_utils import log_system_requirements
-    
-    # Log system info
-    log_system_requirements()
-    
-    # Initialize processor
+    """Main entry point for CSV processing"""
     processor = CSVProcessor()
-    
-    # Process data
     success = processor.process_all()
     
-    if success:
-        print("\n✅ CSV processing completed successfully!")
-        print(f"📁 Processed products saved to: {config.data.processed_products_file}")
-        print(f"🖼️ Images cached in: {config.data.image_cache_dir}")
-    else:
-        print("\n❌ CSV processing failed!")
+    if not success:
         exit(1)
 
 

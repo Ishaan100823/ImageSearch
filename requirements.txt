@@ -5,9 +5,11 @@ torchvision>=0.15.0
 torchaudio>=2.0.0
 faiss-cpu>=1.7.4
 
-# Data Processing
+# Data Processing and Analysis
 pandas>=2.0.0
 numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
 
 # Image Processing
 Pillow>=10.0.0
@@ -18,14 +20,16 @@ uvicorn[standard]>=0.23.0
 python-multipart>=0.0.6
 
 # Frontend and Visualization
-streamlit>=1.40.0
+gradio>=3.40.0
+streamlit>=1.45.0
 
-# Progress Tracking and Utilities
+# Training and Monitoring
 tqdm>=4.65.0
+scikit-learn>=1.3.0
 loguru>=0.7.0
 
 # Networking and Utilities
 requests>=2.31.0
 
 # Storage and Optimization
-psutil>=7.0.0 
+joblib>=1.3.0 

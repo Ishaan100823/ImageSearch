@@ -1,499 +1,400 @@
-# 🔍 Image Search System
+# 🔍 Multi-Model Image Search System
 
-An advanced AI-powered image similarity search system built with CLIP and FAISS. Upload an image and find visually similar products from a database with sophisticated multi-image aggregation and robust pipeline architecture.
+A sophisticated AI-powered visual similarity search platform with specialized model support. Built with CLIP and FAISS, featuring modular architecture, multi-model training capabilities, and modern web interfaces.
 
-## ✨ Features
+## ✨ Key Features
 
-- **🧠 AI-Powered Search**: Uses OpenAI CLIP for deep visual understanding and feature extraction
-- **⚡ Fast Similarity Search**: FAISS indexing for sub-second search results (< 200ms)
-- **📊 Advanced Pipeline**: 4-phase processing with comprehensive progress tracking
-- **🔄 Resume Capability**: Sophisticated checkpoint system to resume from any interruption
-- **🛠️ Configurable Architecture**: Easy process control and stage skipping
-- **🖼️ Multi-Image Support**: Aggregates features from multiple product views (up to 10 images)
-- **🖥️ Modern UI**: Clean Streamlit interface with visual product cards
-- **🚀 Production Ready**: FastAPI backend with comprehensive logging and error handling
-- **📈 Scalable**: Supports large product catalogs with configurable index types
+- **🎯 Multi-Model Architecture**: Train and deploy specialized models for different product categories
+- **🧠 AI-Powered Search**: OpenAI CLIP for deep visual understanding and feature extraction
+- **⚡ Lightning Fast**: FAISS indexing delivers sub-second search results (< 200ms)
+- **🔄 Smart Resume**: Comprehensive checkpoint system prevents work duplication
+- **🏗️ Modular Design**: Clean separation of concerns with organized codebase
+- **📊 Advanced Pipeline**: 4-phase processing with intelligent progress tracking
+- **🖥️ Modern UI**: Enhanced Streamlit interface with model selection
+- **🚀 Production Ready**: FastAPI backend with multiple endpoints
+- **📈 Horizontally Scalable**: Support for unlimited specialized models
 
-## 🏗️ Complete Pipeline Architecture
+## 🏗️ Architecture Overview
 
 ```
 📁 ImageSearch/
-├── 📄 check-shirts.csv             # Product data with multi-image URLs (your data file)
-├── 🔧 config.py                    # Configuration and process control
-├── 📊 main.py                      # Main pipeline orchestrator with argument parsing
-├── 🔍 process_csv_data.py          # Phase 1-2: Data validation and image downloading
-├── 🧠 build_engine.py              # Phase 3-4: CLIP feature extraction and FAISS indexing
-├── 🚀 main_api.py                  # FastAPI backend server with search endpoints
-├── 🖥️ app_streamlit.py             # Streamlit frontend interface
-├── 🛠️ setup.py                     # Automated setup script with PyTorch handling
-├── 🧪 test_setup.py                # Installation validation script
-├── 📁 utils/
-│   └── 📝 logging_utils.py         # Advanced progress tracking and logging
-├── 📁 data/                        # Generated during pipeline
-│   ├── 📄 processed_products.json  # Cleaned and validated product data
-│   └── 📁 image_cache/             # Downloaded and cached product images
-│       └── 📁 product_*/           # Organized by product ID
-├── 📁 models/                      # Generated ML artifacts
-│   ├── 🧠 product_embeddings.npy   # CLIP feature vectors (not used in current version)
-│   ├── 🔍 product_index.faiss      # FAISS similarity index
-│   └── 📊 product_metadata.pkl     # Product metadata with IDs and titles
-├── 📁 checkpoints/                 # Resume points for each phase
-│   ├── 📄 data_validation.json
-│   ├── 📄 image_download.json
-│   ├── 📄 feature_extraction.json
-│   └── 📄 index_building.json
-└── 📁 logs/                        # Comprehensive system logs
+├── 📂 core/                        # Configuration & Model Management
+│   ├── config.py                   # System configuration
+│   ├── model_config.py             # Multi-model definitions
+│   └── __init__.py
+├── 📂 pipeline/                    # Data Processing & ML Pipeline
+│   ├── process_csv_data.py         # Data validation & image downloading
+│   ├── build_engine.py             # CLIP extraction & FAISS indexing
+│   ├── main.py                     # Pipeline orchestrator
+│   └── __init__.py
+├── 📂 api/                         # Backend Services
+│   ├── main_api.py                 # Original single-model API
+│   ├── enhanced_api.py             # Multi-model API with routing
+│   └── __init__.py
+├── 📂 training/                    # Model Training
+│   ├── train_model.py              # Universal training script
+│   └── __init__.py
+├── 📂 ui/                          # Frontend Interfaces
+│   ├── app_streamlit.py            # Enhanced multi-model UI
+│   └── __init__.py
+├── 📂 utils/                       # Shared Utilities
+│   ├── logging_utils.py            # Advanced logging & progress tracking
+│   └── __init__.py
+├── 📂 data/                        # Organized by Model
+│   ├── general/                    # General product model data
+│   │   ├── products.csv
+│   │   ├── image_cache/
+│   │   └── processed_products.json
+│   └── shirts/                     # Specialized shirts model data
+│       ├── products.csv
+│       └── image_cache/
+├── 📂 models/                      # Trained Models
+│   ├── general/                    # General model artifacts
+│   │   ├── index.faiss
+│   │   ├── metadata.pkl
+│   │   └── embeddings.npy
+│   └── shirts/                     # Shirts model artifacts
+├── 📂 checkpoints/                 # Resume Points
+├── 📂 logs/                        # System Logs
+├── run_pipeline.py                 # 🚀 Pipeline launcher
+├── run_training.py                 # 🎯 Training launcher
+├── run_api.py                      # 🌐 API launcher
+├── run_streamlit.py                # 🖥️ UI launcher
+├── products.csv                    # Original data file
+└── requirements.txt                # Dependencies
 ```
 
-## 🔄 4-Phase Pipeline Detailed Flow
+## 🎯 Multi-Model System
 
-### **Phase 1: Data Validation** 📋
-```python
-# Located in: process_csv_data.py:DataValidator
-```
-- **Input**: Raw CSV file (`check-shirts.csv`)
-- **Process**: 
-  - Validates CSV structure and required columns: `shopify_product_id`, `title`, `images`, `preview_image`
-  - Handles malformed JSON arrays in `images` column (common in Shopify exports)
-  - Uses robust parsing with `json.loads()` and `ast.literal_eval()` fallbacks
-  - Validates sample rows and reports data quality issues
-- **Output**: Validation statistics and cleaned data structure
-- **Resume**: Saves validation results to `checkpoints/data_validation.json`
+### Available Models
 
-### **Phase 2: Image Download & Caching** 📥
-```python
-# Located in: process_csv_data.py:ImageDownloader
-```
-- **Input**: Validated product data with image URLs
-- **Process**:
-  - Downloads images with concurrent processing (8 workers by default)
-  - Validates each image: format, size (min 100x100), integrity
-  - Converts all images to RGB format for consistency
-  - Organizes cache: `data/image_cache/product_{id}/view_{n}.jpg`
-  - Implements timeout (10s) and retry logic
-- **Output**: Local image cache organized by product ID
-- **Resume**: Tracks downloaded images in `checkpoints/image_download.json`
+- **🏪 General Product Search**: Multi-category product search (your current 175 products)
+- **👔 Specialized Shirts Search**: Dedicated shirts model (ready for 3-4k images)
+- **➕ Extensible**: Easy to add new specialized models
 
-### **Phase 3: CLIP Feature Extraction** 🧠
-```python
-# Located in: build_engine.py:CLIPFeatureExtractor
-```
-- **Input**: Cached product images
-- **Process**:
-  - Loads OpenAI CLIP model: `openai/clip-vit-base-patch32`
-  - Processes images in batches (16 by default) for efficiency
-  - Extracts 512-dimensional feature vectors
-  - L2 normalizes features for cosine similarity
-  - **Multi-Image Aggregation**: Averages features from multiple product views
-  - Auto-detects device (CUDA/CPU) and optimizes accordingly
-- **Output**: Normalized feature embeddings (512-dim vectors per product)
-- **Resume**: Saves progress in `checkpoints/feature_extraction.json`
+### API Endpoints
 
-### **Phase 4: FAISS Index Building** 🔍
-```python
-# Located in: build_engine.py:FAISSIndexBuilder
+```bash
+# Model Information
+GET  /models          # List all available models
+GET  /health          # System status & model info
+
+# Specialized Search Endpoints
+POST /general/search  # Search general model
+POST /shirts/search   # Search shirts model
+POST /all/search      # Search across all models
+
+# Legacy Support
+POST /search_products/ # Backward compatibility (uses general model)
 ```
-- **Input**: Product embeddings and metadata
-- **Process**:
-  - Creates FAISS index (Flat IP for exact cosine similarity by default)
-  - Supports multiple index types: Flat, IVF, HNSW
-  - Trains index if required (for approximate search methods)
-  - Adds all product embeddings to index for fast similarity search
-- **Output**: 
-  - `models/product_index.faiss`: Searchable FAISS index
-  - `models/product_metadata.pkl`: Product metadata for result mapping
-- **Resume**: Saves completion status in `checkpoints/index_building.json`
 
 ## ⚡ Quick Start
 
-### Method 1: Automated Setup (Recommended)
+### 1. Installation
 
 ```bash
-# 1. Create virtual environment
+# Clone and setup environment
+git clone <repository>
+cd ImageSearch
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# 2. Run automated setup (handles PyTorch installation based on your system)
-python setup.py
-
-# 3. Validate installation
-python test_setup.py
-
-# 4. Run complete pipeline (processes your check-shirts.csv file)
-python main.py
-```
-
-### Method 2: Manual Installation
-
-```bash
-# 1. Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# 2. Install PyTorch (choose based on your system)
-# For macOS/CPU
-pip install torch torchvision torchaudio
-
-# For Linux with CUDA 11.8
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# For CPU-only systems
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# 3. Install remaining dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 4. Validate setup
+# Validate installation
 python test_setup.py
-
-# 5. Run pipeline
-python main.py
 ```
 
-### 3. Start Search System
+### 2. Train Your First Model
 
 ```bash
-# Option 1: Start both servers automatically
-python main.py --servers
+# Your current general model (already trained)
+python run_training.py general
 
-# Option 2: Start manually (recommended for production)
-# Terminal 1: API Backend
-python main_api.py
+# Train a new shirts model (place CSV in data/shirts/products.csv)
+python run_training.py shirts --force
 
-# Terminal 2: Frontend UI  
-python app_streamlit.py
+# List available models
+python run_training.py --list
+```
+
+### 3. Start the System
+
+```bash
+# Start multi-model API backend
+python run_api.py
+
+# Start enhanced Streamlit frontend
+python run_streamlit.py
 ```
 
 **Access Points:**
-- **🖥️ UI Interface**: http://localhost:7860 (Streamlit with visual cards)
-- **📖 API Documentation**: http://localhost:8000/docs (FastAPI auto-generated docs)
-- **🔍 API Health Check**: http://localhost:8000/health
+- **🖥️ Enhanced UI**: http://localhost:8501 (Multi-model interface)
+- **📖 API Docs**: http://localhost:8000/docs (Interactive documentation)
+- **🔍 Models Info**: http://localhost:8000/models (Available models)
 
-## 📊 Data Format & Requirements
+## 🔧 Configuration & Customization
 
-Your CSV file should follow this exact structure:
+### Adding New Models
 
-```csv
-shopify_product_id,title,images,preview_image
-"8,526,513,733,794","Grey Checks Slim Fit Shirt","[""https://img1.jpg"" ""https://img2.jpg"" ""https://img3.jpg""]","https://preview.jpg"
-```
-
-**Column Details:**
-- **`shopify_product_id`**: Unique product identifier (can contain commas)
-- **`title`**: Product name/description (used in search results)
-- **`images`**: JSON array of image URLs (multiple product views, up to 10)
-- **`preview_image`**: Primary product image URL (used for display)
-
-**Important Notes:**
-- The system handles malformed JSON arrays (missing commas between URLs)
-- Images are validated for format, size (min 100x100px), and integrity
-- All images are converted to RGB format for consistency
-- Products with invalid/inaccessible images are logged but processing continues
-
-## 🎛️ Advanced Configuration & Control
-
-### Quick Configuration Presets
-
-```bash
-# Resume from different stages (skip completed work)
-python main.py --resume-images     # Skip data processing, start from feature extraction
-python main.py --resume-features   # Skip to index building only
-python main.py --servers           # Just run API/UI servers
-
-# Rebuild modes
-python main.py --full-rebuild      # Force rebuild everything from scratch
-python main.py --quick-test        # Skip heavy processes for testing
-
-# Selective processing
-python main.py --data-only         # Only data validation and image download
-python main.py --ml-only          # Only feature extraction and index building
-```
-
-### Manual Process Control
-
-```bash
-# Skip specific processes
-python main.py --skip image_download feature_extraction
-
-# Force rebuild specific processes
-python main.py --force feature_extraction index_building
-
-# Process individual stages
-python process_csv_data.py  # Data processing only
-python build_engine.py      # ML pipeline only
-```
-
-### Configuration Customization
-
-Edit `config.py` for fine-tuned control:
-
+1. **Define Model** in `core/model_config.py`:
 ```python
-# Process Control
-config.skip_process("image_download")           # Skip if images already cached
-config.force_rebuild_process("feature_extraction")  # Force rebuild features
-
-# Performance Tuning
-config.processes["feature_extraction"].batch_size = 32     # Larger batches for GPU
-config.processes["image_download"].max_workers = 16        # More concurrent downloads
-config.data.max_images_per_product = 5                     # Limit images per product
-
-# Model Configuration
-config.model.clip_model = "openai/clip-vit-base-patch32"   # CLIP model variant
-config.model.device = "cuda"                               # Force GPU usage
-config.index.index_type = "ivf"                           # Use approximate search
-```
-
-## 🔧 Troubleshooting & Performance
-
-### Common Issues & Solutions
-
-**❌ "FAISS index not found"**
-```bash
-# Build the search index first
-python main.py --ml-only
-# Or run just the index building phase
-python build_engine.py
-```
-
-**❌ "API not available" / Connection errors**
-```bash
-# Check if API server is running
-curl http://localhost:8000/health
-
-# Start API server manually
-python main_api.py
-
-# Check for port conflicts
-lsof -i :8000  # macOS/Linux
-netstat -an | findstr :8000  # Windows
-```
-
-**❌ "No images downloaded" / Image download failures**
-```bash
-# Check internet connection and CSV URLs
-python main.py --force image_download
-
-# Increase timeout for slow connections
-# Edit config.py: config.data.download_timeout = 30
-```
-
-**❌ "CUDA out of memory" / GPU issues**
-```python
-# In config.py, reduce batch size or force CPU
-config.processes["feature_extraction"].batch_size = 8
-config.model.device = "cpu"  # Force CPU processing
-```
-
-**❌ CSV parsing errors**
-- The system handles malformed JSON arrays automatically
-- Check that your CSV has all required columns
-- Ensure image URLs are accessible (test a few manually)
-
-### Performance Optimization
-
-**For faster processing:**
-```python
-# Increase batch sizes (if you have sufficient GPU memory)
-config.processes["feature_extraction"].batch_size = 32
-config.processes["image_download"].max_workers = 16
-
-# Use GPU acceleration
-config.model.device = "cuda"
-
-# Use approximate search for large catalogs
-config.index.index_type = "ivf"  # or "hnsw"
-```
-
-**For lower memory usage:**
-```python
-# Reduce batch sizes
-config.processes["feature_extraction"].batch_size = 8
-config.data.max_images_per_product = 3
-
-# Force CPU usage
-config.model.device = "cpu"
-```
-
-**Resume from interruptions:**
-The system automatically saves checkpoints. If interrupted:
-```bash
-# Check what was completed
-ls checkpoints/
-
-# Resume automatically
-python main.py  # Will continue from last checkpoint
-
-# Force restart specific phase
-python main.py --force feature_extraction
-```
-
-## 📈 API Usage & Integration
-
-### Search Endpoint
-
-```python
-import requests
-from PIL import Image
-import io
-
-# Search with uploaded image
-with open('query_image.jpg', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8000/search',
-        files={'file': ('query.jpg', f, 'image/jpeg')},
-        params={'top_k': 10}
-    )
-
-results = response.json()
-print(f"Found {results['total_results']} similar products in {results['query_time_ms']:.1f}ms")
-
-# Process results
-for i, product in enumerate(results['results']):
-    print(f"{i+1}. {product['title']} (similarity: {product['similarity_score']:.3f})")
-```
-
-### Response Format
-
-```json
-{
-  "query_time_ms": 156.7,
-  "total_results": 5,
-  "results": [
-    {
-      "product_id": "8526513733794",
-      "title": "Grey Checks Slim Fit Shirt",
-      "similarity_score": 0.892,
-      "preview_url": "https://cdn.shopify.com/...",
-      "num_views": 10,
-      "rank": 1
+MODELS = {
+    "your_model": {
+        "name": "Your Model Name",
+        "description": "Model description",
+        "data_dir": str(DATA_DIR / "your_model"),
+        "models_dir": str(MODELS_DIR / "your_model"),
+        "csv_file": "products.csv",
+        "categories": ["Category1", "Category2"],
+        "api_path": "/your_model",
+        "port_offset": 2
     }
-  ]
 }
 ```
 
-### Health & Statistics Endpoints
-
-```python
-# Check system health
-health = requests.get('http://localhost:8000/health').json()
-print(f"Status: {health['status']}, Index size: {health['index_size']}")
-
-# Get system statistics  
-stats = requests.get('http://localhost:8000/stats').json()
-print(f"Total products: {stats['total_products']}")
-```
-
-## 📊 System Performance & Specifications
-
-### Performance Metrics
-- **Search Speed**: < 200ms per query (CPU), < 100ms (GPU)
-- **Index Building**: ~2-3 minutes per 1000 products (GPU)
-- **Memory Usage**: ~4-6GB during processing, ~2GB during serving
-- **Storage**: ~50-100MB per 1000 products (images + index)
-- **Throughput**: 10-50 searches/second (depending on hardware)
-
-### System Requirements
-- **Python**: 3.8-3.11 (3.10+ recommended for best PyTorch compatibility)
-- **Memory**: 8GB minimum, 16GB recommended for large catalogs
-- **Storage**: 5GB for models + variable for image cache
-- **GPU**: Optional but recommended (RTX 3060+ or equivalent)
-- **Network**: Stable internet for model downloads and image URLs
-
-### Hardware Recommendations
-
-**Development Setup:**
-- CPU: 4+ cores, 8GB RAM
-- Storage: 10GB available space
-- Network: Broadband for image downloads
-
-**Production Setup:**
-- CPU: 8+ cores, 16GB RAM
-- GPU: RTX 3060+ with 8GB+ VRAM
-- Storage: SSD with 50GB+ space
-- Network: High-bandwidth for large image catalogs
-
-## 📁 Generated Files Structure
-
-After successful pipeline execution:
-
-```
-📁 data/
-├── 📄 processed_products.json      # Validated and cleaned product data
-└── 📁 image_cache/                 # Downloaded and cached images
-    ├── 📁 product_8526513733794/   # Organized by product ID
-    │   ├── 🖼️ view_1.jpg          # Multiple product views
-    │   ├── 🖼️ view_2.jpg
-    │   └── 🖼️ preview.jpg         # Primary image
-    └── 📁 product_*/               # Additional products...
-
-📁 models/
-├── 🔍 product_index.faiss          # FAISS similarity search index
-└── 📊 product_metadata.pkl         # Product metadata for results
-
-📁 checkpoints/                     # Resume points for pipeline stages
-├── 📄 data_validation.json         # Data validation completion
-├── 📄 image_download.json          # Image download progress
-├── 📄 feature_extraction.json      # Feature extraction progress
-└── 📄 index_building.json          # Index building completion
-
-📁 logs/                            # Comprehensive system logs
-├── 📄 image_search_YYYYMMDD_HHMMSS.log  # Detailed debug logs
-└── 📄 errors.log                   # Error-only logs
-```
-
-## 🔐 Production Deployment Notes
-
-### Security Considerations
-```python
-# Update CORS settings in main_api.py
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://yourdomain.com"],  # Replace ["*"]
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-```
-
-### Environment Variables
+2. **Prepare Data**:
 ```bash
-# Set production configurations
-export CLIP_MODEL="openai/clip-vit-base-patch32"
-export API_HOST="0.0.0.0"
-export API_PORT="8000"
-export DEVICE="cuda"  # or "cpu"
+mkdir data/your_model
+# Place your products.csv in data/your_model/
 ```
 
-### Monitoring & Health Checks
-- Use `/health` endpoint for load balancer health checks
-- Monitor logs in `logs/` directory
-- Set up alerts for API response times > 500ms
-- Monitor GPU memory usage if using CUDA
+3. **Train Model**:
+```bash
+python run_training.py your_model --force
+```
 
-### Scaling Considerations
-- Consider Redis for caching frequent searches
-- Implement rate limiting for API endpoints
-- Use CDN for serving product images
-- Consider database backend for metadata instead of pickle files
+### Data Format
+
+Your CSV files should follow this structure:
+
+```csv
+shopify_product_id,title,images,preview_image,category
+123456789,"Product Title","[""url1.jpg"", ""url2.jpg""]","preview.jpg","Category"
+```
+
+**Required Columns:**
+- `shopify_product_id`: Unique identifier
+- `title`: Product name/description
+- `images`: JSON array of image URLs (up to 10 images)
+- `preview_image`: Primary display image
+
+**Optional Columns:**
+- `category`: Product category for filtering
+
+## 🚀 Usage Examples
+
+### Python API
+
+```python
+import requests
+
+# Search general model
+response = requests.post(
+    "http://localhost:8000/general/search",
+    files={"file": open("query_image.jpg", "rb")},
+    params={"top_k": 5}
+)
+results = response.json()
+
+# Search all models
+response = requests.post(
+    "http://localhost:8000/all/search",
+    files={"file": open("query_image.jpg", "rb")},
+    params={"top_k": 3}
+)
+all_results = response.json()
+```
+
+### Command Line
+
+```bash
+# Train models
+python run_training.py general --force
+python run_training.py shirts --force
+
+# Run pipeline only (no API)
+python run_pipeline.py --mode data    # Data processing only
+python run_pipeline.py --mode ml      # ML pipeline only
+python run_pipeline.py --mode all     # Complete pipeline
+```
+
+## 📊 Pipeline Phases
+
+### Phase 1: Data Validation
+- Validates CSV structure and required columns
+- Handles malformed JSON arrays in image URLs
+- Reports data quality statistics
+- **Checkpoint**: `checkpoints/data_validation.json`
+
+### Phase 2: Image Download & Caching
+- Concurrent download with 8 workers
+- Image validation (format, size, integrity)
+- Organized cache by product ID
+- **Checkpoint**: `checkpoints/image_download.json`
+
+### Phase 3: CLIP Feature Extraction
+- OpenAI CLIP model: `openai/clip-vit-base-patch32`
+- Batch processing for efficiency
+- Multi-image aggregation (averages multiple views)
+- L2 normalization for cosine similarity
+- **Checkpoint**: `checkpoints/feature_extraction.json`
+
+### Phase 4: FAISS Index Building
+- Creates searchable FAISS index
+- Supports multiple index types (Flat, IVF, HNSW)
+- Exact cosine similarity by default
+- **Checkpoint**: `checkpoints/index_building.json`
+
+## 🔍 Advanced Features
+
+### Smart Resume System
+```bash
+# Skip completed phases automatically
+python run_training.py shirts  # Resumes from last checkpoint
+
+# Force complete rebuild
+python run_training.py shirts --force
+```
+
+### Performance Configuration
+Modify `core/config.py`:
+```python
+# Download settings
+max_images_per_product = 10      # Images per product
+download_timeout = 10            # Download timeout (seconds)
+max_workers = 8                  # Concurrent downloads
+
+# Model settings
+device = "auto"                  # auto/cuda/cpu
+batch_size = 16                  # CLIP batch size
+embedding_dim = 512              # Feature dimensions
+
+# Index settings
+index_type = "flat"              # flat/ivf/hnsw
+similarity_metric = "cosine"     # cosine/euclidean
+```
+
+### Custom Index Types
+```python
+# For large datasets (>100k products)
+config.index.index_type = "ivf"
+
+# For maximum speed (approximate search)
+config.index.index_type = "hnsw"
+```
+
+## 🧪 Testing & Validation
+
+```bash
+# System validation
+python test_setup.py
+
+# Health check
+curl http://localhost:8000/health
+
+# Model information
+curl http://localhost:8000/models
+
+# Test search (with image file)
+curl -X POST \
+  -F "file=@test_image.jpg" \
+  "http://localhost:8000/general/search?top_k=5"
+```
+
+## 📈 Monitoring & Logging
+
+### Log Files
+- **Pipeline logs**: `logs/pipeline.log`
+- **API logs**: `logs/api.log`
+- **Training logs**: `logs/training.log`
+
+### Progress Tracking
+- Real-time progress bars with ETA
+- Detailed checkpoint information
+- Performance metrics and timing
+
+### Health Monitoring
+```python
+# API health endpoint returns:
+{
+    "status": "healthy",
+    "available_models": 2,
+    "total_products": 3500,
+    "models": {
+        "general": {"products": 175, "name": "General Product Search"},
+        "shirts": {"products": 3325, "name": "Specialized Shirts Search"}
+    }
+}
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Model Not Training**
+```bash
+# Check CSV file location
+ls data/your_model/products.csv
+
+# Check logs
+tail -f logs/training.log
+
+# Force rebuild
+python run_training.py your_model --force
+```
+
+**API Connection Issues**
+```bash
+# Check if API is running
+curl http://localhost:8000/health
+
+# Restart API
+python run_api.py
+```
+
+**Memory Issues**
+```python
+# Reduce batch size in core/config.py
+config.model.batch_size = 8
+
+# Use CPU-only mode
+config.model.device = "cpu"
+```
+
+### Performance Optimization
+
+**For Large Datasets (>10k products)**:
+- Use `index_type = "ivf"` for faster approximate search
+- Increase `batch_size` if you have GPU memory
+- Consider distributed processing for huge datasets
+
+**For Production Deployment**:
+- Use GPU acceleration for faster feature extraction
+- Enable CORS properly for web deployment
+- Set up proper logging and monitoring
+- Use load balancing for high-traffic scenarios
+
+## 📄 License
+
+[Your License Here]
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📄 License
+## 🆘 Support
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+For issues, questions, or feature requests:
+- 📧 Email: [your-email]
+- 🐛 Issues: [GitHub Issues URL]
+- 📖 Docs: [Documentation URL]
 
 ---
 
-**🚀 Ready to build your AI-powered image search system?**
-
-```bash
-python setup.py && python main.py
-```
-
-**Need help?** Check the troubleshooting section or examine the generated logs in the `logs/` directory for detailed debugging information. 
+**Built with ❤️ using OpenAI CLIP, FAISS, FastAPI, and Streamlit** 
